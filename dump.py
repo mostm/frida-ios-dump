@@ -11,7 +11,6 @@ import codecs
 import frida
 import threading
 import os
-import shutil
 import time
 import argparse
 import tempfile
@@ -78,19 +77,22 @@ def generate_ipa(path, display_name):
     print('Generating "{}"'.format(ipa_filename))
     try:
         app_name = file_dict['app']
-
         for key, value in file_dict.items():
             from_dir = os.path.join(path, key)
             to_dir = os.path.join(path, app_name, value)
             if key != 'app':
-                shutil.move(from_dir, to_dir)
-
+                try:
+                    os.rename(from_dir, to_dir)
+                except FileExistsError:
+                    os.remove(to_dir)
+                    os.rename(from_dir, to_dir)
         target_dir = './' + PAYLOAD_DIR
-        zip_args = ('zip', '-qr', os.path.join(os.getcwd(), ipa_filename), target_dir)
+        zip_args = ("7z", "a", "-r", f"{os.getcwd()}/{ipa_filename}.zip", "-w", f"{target_dir}", "-mem=AES256")
         subprocess.check_call(zip_args, cwd=TEMP_DIR)
-        shutil.rmtree(PAYLOAD_PATH)
+        os.rename(f"{os.getcwd()}/{ipa_filename}.zip", f"{os.getcwd()}/{ipa_filename}")
+        os.system('rmdir /S /Q "{}"'.format(PAYLOAD_PATH))
     except Exception as e:
-        print(e)
+        print(f"{type(e)}: {e}")
         finished.set()
 
 def on_message(message, data):
@@ -121,10 +123,12 @@ def on_message(message, data):
 
             chmod_dir = os.path.join(PAYLOAD_PATH, os.path.basename(dump_path))
             chmod_args = ('chmod', '655', chmod_dir)
+            """
             try:
                 subprocess.check_call(chmod_args)
             except subprocess.CalledProcessError as err:
                 print(err)
+            """
 
             index = origin_path.find('.app/')
             file_dict[os.path.basename(dump_path)] = origin_path[index + 5:]
@@ -139,11 +143,12 @@ def on_message(message, data):
 
             chmod_dir = os.path.join(PAYLOAD_PATH, os.path.basename(app_path))
             chmod_args = ('chmod', '755', chmod_dir)
+            """
             try:
                 subprocess.check_call(chmod_args)
             except subprocess.CalledProcessError as err:
                 print(err)
-
+            """
             file_dict['app'] = os.path.basename(app_path)
 
         if 'done' in payload:
@@ -243,7 +248,7 @@ def create_dir(path):
     path = path.strip()
     path = path.rstrip('\\')
     if os.path.exists(path):
-        shutil.rmtree(path)
+        os.system('rmdir /S /Q "{}"'.format(path))
     try:
         os.makedirs(path)
     except os.error as err:
@@ -357,6 +362,6 @@ if __name__ == '__main__':
         ssh.close()
 
     if os.path.exists(PAYLOAD_PATH):
-        shutil.rmtree(PAYLOAD_PATH)
+        os.system('rmdir /S /Q "{}"'.format(PAYLOAD_PATH))
 
     sys.exit(exit_code)
